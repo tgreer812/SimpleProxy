@@ -17,6 +17,8 @@ global_internal_backwards_buffer = b''
 global_ifb_mutex = Lock() 
 global_ibb_mutex = Lock()
 
+global_socket_timeout = 0.1
+
 class ProxyEndpoint(Thread):
 
     def __init__(self, endpoint_index):
@@ -156,11 +158,6 @@ class ConnectingProxyEndpoint(ProxyEndpoint):
 
 
         #send bytes to external party
-        if(self.endpoint_index == 0):
-            global_ibb_mutex.acquire()
-        else:
-            global_ifb_mutex.acquire()
-
         if(len(self.external_send_buf)):
             try:
                 self.my_socket.send(self.external_send_buf)
@@ -194,7 +191,7 @@ class SimpleProxy():
 
     def __init__(self, lhost, lport, rhost, rport, proxy_type, should_auto_reconnect=True):
 
-        socket.setdefaulttimeout(0.01)
+        socket.setdefaulttimeout(global_socket_timeout)
         self.proxy_type = proxy_type
         if(proxy_type & 2):
             self.first_endpoint = ConnectingProxyEndpoint(0, lhost, lport, should_auto_reconnect=should_auto_reconnect)
@@ -202,13 +199,13 @@ class SimpleProxy():
             self.first_endpoint = ListeningProxyEndpoint(0, lhost, lport)
 
         if(proxy_type & 1):
-            self.second_endpoint = ConnectingProxyEndpoint(0, rhost, rport, should_auto_reconnect=should_auto_reconnect)
+            self.second_endpoint = ConnectingProxyEndpoint(1, rhost, rport, should_auto_reconnect=should_auto_reconnect)
         else:
-            self.second_endpoint = ListeningProxyEndpoint(0, rhost, rport)
+            self.second_endpoint = ListeningProxyEndpoint(1, rhost, rport)
 
     def serve_forever(self):
-        self.first_endpoint.run()
-        self.second_endpoint.run()
+        self.first_endpoint.start()
+        self.second_endpoint.start()
 
         #TODO: add capability to restart connections 
 
@@ -245,7 +242,7 @@ def main():
     parser.add_argument("--rhost", type=str, default="127.0.0.1", help="Right endpoint host")
     parser.add_argument("--rport", type=int, default=8081, help="Right endpoint port")
     parser.add_argument("--proxy_type", type=int, default=3, help="Bitmask - first bit = left second bit = right. 00 = both listening, 3 = 11 = both connect")
-    parser.add_argument("--debug", action="store_true", default=True, help="Show debug information")
+    parser.add_argument("--debug", action="store_true", default=False, help="Show debug information")
     parser.add_argument("--logging", type=str, help="Log file")
     args = parser.parse_args()
     kwargs = vars(args)
