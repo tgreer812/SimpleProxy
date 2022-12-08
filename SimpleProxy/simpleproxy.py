@@ -1,6 +1,4 @@
-import argparse
 import logging
-import socket, threading
 
 LOG_FORMAT = "[%(levelname)s] %(message)s"
 LOG_DEBUG_FORMAT = "[%(threadName)s-%(filename)s-%(funcName)s-%(lineno)s | %(levelname)s] %(message)s"
@@ -8,10 +6,81 @@ LOG_DEBUG_FORMAT = "[%(threadName)s-%(filename)s-%(funcName)s-%(lineno)s | %(lev
 log = logging.getLogger(__name__)
 
 
+# Import the required modules
+from argparse import ArgumentParser
+from twisted.internet import reactor
+from twisted.web.proxy import ReverseProxyResource, ProxyClientFactory
+from twisted.web.server import Site, Request
 
-def run(args, **kwargs):
-    log.info("run was called")
-		
+from hexdump import hexdump
+
+import json
+
+class HookedProxyClientFactory(ProxyClientFactory):
+    def test(self, line):
+        pass
+
+class HookedRequest(Request):
+
+    def write(self, data):
+        log.info("=====Response=====")
+        print(self.responseHeaders)
+        #hexdump(data)
+        print(data[:10])
+        super().write(data)
+
+    def process(self):
+        log.info("=====Request=====")
+        
+        strHeaders = {}
+        for header in self.requestHeaders.getAllRawHeaders():
+            strHeaders[header[0].decode('utf-8')] = list(
+                map(lambda elem: elem.decode('utf-8'), header[1])
+            )
+        
+        #print(strHeaders)
+        output = {
+            'method' : self.method.decode('utf-8'),
+            'uri' : self.uri.decode('utf-8'),
+            #'headers' : self.requestHeaders,
+            'headers' : strHeaders,
+            'data' : str(self.content)
+        }
+        print(json.dumps(output,indent=2))
+        # log.debug(locals())
+        # log.debug(dir())
+        super().process()
+
+
+class HookedSite(Site):
+
+    def render(self,request):
+        pass
+
+
+
+def start_proxy(rhost, rport, rpath, lport):
+    print(rhost, rport, rpath, lport)
+    # Create a reverse proxy resource
+    proxy = ReverseProxyResource(
+      rhost,
+      rport,
+      b""
+    )
+
+
+    # Create a site and add the proxy resource
+    site = Site(proxy,requestFactory=HookedRequest)
+
+    # Start the reactor and listen for incoming connections
+    reactor.listenTCP(lport, site)
+    reactor.run()
+
+
+def run(args):
+    start_proxy(args.rhost, args.rport, args.rpath, args.lport)
+
+
 class SymbolFormatter(logging.Formatter):
     symbols = ["x", "!", "-", "+", "DBG"]
     
@@ -26,19 +95,20 @@ class SymbolFormatter(logging.Formatter):
         return super(SymbolFormatter, self).format(symbol_record)
 
 
-def main():
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--lhost", type=str, default="0.0.0.0", help="Left endpoint host")
-    parser.add_argument("--lport", type=int, default=80, help="Left endpoint port")
-    parser.add_argument("--rhost", type=str, default="0.0.0.0", help="Right endpoint host")
-    parser.add_argument("--rport", type=int, default=80, help="Right endpoint port")
-    parser.add_argument("--type", type=int, default=0, help="Bitmask - first bit = left second bit = right. 00 = both listening, 3 = 11 = both connect")
-    parser.add_argument("--debug", action="store_true", default=False, help="Show debug information")
+def parse_args():
+    # Parse the command-line arguments
+    parser = ArgumentParser(description="Reverse proxy server")
+    parser.add_argument("--rhost", required=True, type=str, help="")
+    parser.add_argument("--rport", default=80, type=int, help="")
+    parser.add_argument("--lport", default=8080, type=int, help="")
+    parser.add_argument("--rpath", default="", type=str, help="")
     parser.add_argument("--logging", type=str, help="Log file")
-    args = parser.parse_args()
-    kwargs = vars(args)
+    parser.add_argument("--debug", action="store_true", help="Enable debug information")
+    
+    return parser.parse_args()
 
+
+def log_init(args):
     log.setLevel(logging.DEBUG)
 	
     formatter = logging.Formatter(LOG_DEBUG_FORMAT) if args.debug else SymbolFormatter(LOG_FORMAT)
@@ -53,16 +123,19 @@ def main():
         file_handler.setFormatter(formatter)
         log.addHandler(file_handler)
 
+
+def main():
+    args = parse_args()
+    log_init(args)
+
     try:
-        run(args, **kwargs)
+        run(args)
     except KeyboardInterrupt:
-        log.debug("keyboard interrupt")
-    except AssertionError as e:
-        log.error(e)
+        pass
     except Exception as e:
-        log.debug("Unknown exception")
+        log.error("Unknown exception...")
         log.exception(e)
-		
+
 
 if __name__ == "__main__":
-	main()
+    main()
