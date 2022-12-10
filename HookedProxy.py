@@ -12,6 +12,9 @@ TODO: do this with more sleep :)
 
 from twisted.web.proxy import ReverseProxy, ReverseProxyRequest
 
+class NotOverriddenError(Exception):
+    """Raised when a method is not overridden by a user-defined subclass"""
+
 
 class Hook:
     """A chainable hook that can be used to intercept and modify requests and responses.
@@ -31,7 +34,7 @@ class Hook:
         callbacks: A dictionary of functions that can be used to modify the hook directly.
     """
 
-    def __init__(self, handleRequest=None, handleResponse=None):
+    def __init__(self):
         """Initialize a Hook object.
 
         Args:
@@ -41,16 +44,8 @@ class Hook:
             handleResponse: A function that takes the status, headers, and body of a response as arguments and returns a
                             tuple of these values. This function will be called when a response is received by the Hook.
         """
-        self.handleRequest = handleRequest
-        self.handleResponse = handleResponse
         self.state = {
             'active': True
-        }
-        self.callbacks = {
-            'deactivateHook': self.deactivateHook,
-            'activateHook': self.activateHook,
-            'setState': self.setState,
-            'isActive': self.isActive
         }
     
     class InvalidHookStateError(Exception):
@@ -122,81 +117,111 @@ class Hook:
         self.state['active'] = True
     
     def onRequestReceived(self, method: bytes, host: bytes, path: bytes, headers: dict, body: bytes=b"" , version: bytes=b"HTTP/2"):
-        """Run the user-defined handleRequest callback and call the handleRequest
-        function of the next hook in the chain (if there is one) with the result
-        of the previous handleRequest call. If there are no more hooks in the
-        chain, return the result of the previous handleRequest call.
+        """
+        Handles an incoming HTTP request.
+
+        This method is called whenever a new request is received by the server. It checks to make sure
+        the hook is active. If so it calls the onHandleRequest method for
+        modification of a request before it is processed by the server. 
 
         Args:
-            method: The HTTP method of the request (bytes).
-            host: The host of the request (bytes).
-            path: The path of the request (bytes).
-            headers: The headers of the request (dict).
-            body: The body of the request (bytes).
-            version: The HTTP version of the request (bytes).
-        
-        Raises:
-            InvalidHookCallbackReturnType: If the result is not of the expected return type.
+            method: The HTTP method of the request (e.g. GET, POST, PUT, etc.)
+            host: The hostname of the server.
+            path: The path of the requested resource on the server.
+            headers: A dictionary of headers sent with the request.
+            body: The body of the request.
+            version: The HTTP version of the request (e.g. HTTP/1.1 or HTTP/2).
 
         Returns:
-            The result of the handleRequest call.
+            A tuple containing the modified request parameters. The tuple should be in the following
+            format: (method, host, path, headers, body, version)
         """
         # Check if the hook is active
         if not self.state['active']:
             return method, host, path, headers, body, version
-        
-        # Call the user-defined handleRequest callback
-        if (self.handleRequest is not None):
-            # Ensure that the handleRequest callback returns the relevant types
-            result = self.handleRequest(
-                method,
-                host,
-                path,
-                headers,
-                body,
-                version,
-                self.callbacks
-            )
-            self._validate_request_callback_return_type(result)
-            return result
 
-        return method, host, path, headers, body, version
+        # Allow the user to override the handleRequest method
+        new_method,     \
+        new_host,       \
+        new_path,       \
+        new_headers,    \
+        new_body,       \
+        new_version = self.onHandleRequest(method, host, path, headers, body, version)
+        self._validate_request_callback_return_type(
+            (new_method, new_host, new_path, new_headers, new_body, new_version)
+        )
+        
+        return new_method, new_host, new_path, new_headers, new_body, new_version
 
     def onResponseReceived(self, status: bytes, headers: dict, body: bytes):
-        """Run the user-defined handleResponse callback and call the handleResponse
-        function of the next hook in the chain (if there is one) with the result
-        of the previous handleResponse call. If there are no more hooks in the
-        chain, return the result of the previous handleResponse call.
+        """
+        Handles an incoming HTTP response.
+
+        This method is called whenever a response is received by the client. It allows the user to
+        modify the response before it is processed by the client.
 
         Args:
-            status: The status code of the response (bytes).
-            headers: The headers of the response (dict).
-            body: The body of the response (bytes).
-
-        Raises:
-            InvalidHookCallbackReturnType: If the result is not of the expected return type.
+            status: The status code of the response (e.g. 200 for success, 404 for not found, etc.)
+            headers: A dictionary of headers sent with the response.
+            body: The body of the response.
 
         Returns:
-            The result of the handleResponse call.
+            A tuple containing the modified response parameters. The tuple should be in the following
+            format: (status, headers, body)
         """
         # Check if the hook is active
         if not self.state['active']:
             return status, headers, body
-        
-        # Call the user-defined handleResponse callback
-        if (self.handleResponse is not None):
-            # Ensure that the handleResponse callback returns a bytes status, dict headers, and bytes body
-            result = self.handleResponse(
-                status,
-                headers,
-                body,
-                self.callbacks
-            )
-            self._validate_response_callback_return_type(result)
-            return result
 
-        return status, headers, body
+        # Allow the user to override the handleResponse method
+        new_status, new_headers, new_body = self.onHandleResponse(status, headers, body)
+        self._validate_response_callback_return_type((new_status, new_headers, new_body))
 
+        return new_status, new_headers, new_body
+
+    def onHandleRequest(self, method, host, path, headers, body, version):
+        """
+        Handles an incoming HTTP request.
+
+        This method is called by the `onRequestReceived` method whenever a new request is received by
+        the server. It allows the user to specify custom behavior for handling requests. This method
+        must be overridden by a user-defined subclass.
+
+        Args:
+            method: The HTTP method of the request (e.g. GET, POST, PUT, etc.)
+            host: The hostname of the server.
+            path: The path of the requested resource on the server.
+            headers: A dictionary of headers sent with the request.
+            body: The body of the request.
+            version: The HTTP version of the request (e.g. HTTP/1.1 or HTTP/2).
+
+        Returns:
+            A tuple containing the modified request parameters. The tuple should be in the following
+            format: (method, host, path, headers, body, version)
+        """
+        # This method must be overridden by a user-defined subclass
+        raise NotOverriddenError('onHandleRequest() must be overridden by a user-defined subclass')
+
+    def onHandleResponse(self, method, host, path, headers, body, version):
+        """
+        Handles an incoming HTTP response.
+
+        This method is called by the `onResponseReceived` method whenever a response is received by the
+        client. It allows the user to specify custom behavior for handling responses. This method
+        must be overridden by a user-defined subclass.
+
+        Args:
+            status: The status code of the response (e.g. 200 for success, 404 for not found, etc.)
+            headers: A dictionary of headers sent with the response.
+            body: The body of the response.
+
+        Returns:
+            A tuple containing the modified response parameters. The tuple should be in the following
+            format: (status, headers, body)
+        """
+        # This method must be overridden by a user-defined subclass
+        raise NotOverriddenError('onHandleResponse() must be overridden by a user-defined subclass')
+    
     
 class HookChain:
     """A chain of Hook objects that can be used to intercept and modify requests and responses.
@@ -206,7 +231,6 @@ class HookChain:
         """Initialize a HookChain object.
         """
         self.hooks = []
-        self.last_hook = None
 
     def registerHook(self, hook: Hook):
         """Add a Hook object to the end of the chain.
@@ -236,7 +260,7 @@ class HookChain:
         """
         result = None
         for hook in self.hooks:
-            result = hook.onRequestReceived(method, host, path, headers, body, version, callbacks)
+            result = hook.onHandleRequest(method, host, path, headers, body, version, callbacks)
         return result
 
     def onResponseReceived(self, status: bytes, headers: dict, body: bytes, callbacks: dict):
@@ -252,7 +276,7 @@ class HookChain:
         """
         result = None
         for hook in self.hooks:
-            result = hook.onResponseReceived(status, headers, body, callbacks)
+            result = hook.onHandleResponse(status, headers, body, callbacks)
         return result
 
 
