@@ -60,6 +60,27 @@ class Hook:
         """
         if not isinstance(result, expected_return_type):
             raise self.InvalidHookCallbackReturnType(f'The result must be of type {expected_return_type}.')
+    
+    def _validate_request_callback_return_type(self, result):
+        self.check_callback_return_type(result, tuple)
+        if len(result) != 6:
+            raise self.InvalidHookCallbackReturnType('The handleRequest callback must return a tuple containing bytes method, bytes host, bytes path, dict headers, bytes body, and bytes version.')
+        self.check_callback_return_type(result[0], bytes)
+        self.check_callback_return_type(result[1], bytes)
+        self.check_callback_return_type(result[2], bytes)
+        self.check_callback_return_type(result[3], dict)
+        self.check_callback_return_type(result[4], bytes)
+        self.check_callback_return_type(result[5], bytes)
+    
+    def _validate_response_callback_return_type(self, result):
+        if not isinstance(result, tuple) or len(result) != 3:
+            raise self.InvalidHookCallbackReturnType('The handleResponse callback must return a tuple containing a bytes status, dict headers, and bytes body.')
+        if not isinstance(result[0], bytes):
+            raise self.InvalidHookCallbackReturnType('The status returned by the handleResponse callback must be of type bytes.')
+        if not isinstance(result[1], dict):
+            raise self.InvalidHookCallbackReturnType('The headers returned by the handleResponse callback must be of type dict.')
+        if not isinstance(result[2], bytes):
+            raise self.InvalidHookCallbackReturnType('The body returned by the handleResponse callback must be of type bytes.')
 
     def isActive(self):
         return self.state['active']
@@ -125,19 +146,10 @@ class Hook:
                 version,
                 self.callbacks
             )
-            self.check_callback_return_type(result, tuple)
-            if len(result) != 6:
-                raise self.InvalidHookCallbackReturnType('The handleRequest callback must return a tuple containing bytes method, bytes host, bytes path, dict headers, bytes body, and bytes version.')
-            self.check_callback_return_type(result[0], bytes)
-            self.check_callback_return_type(result[1], bytes)
-            self.check_callback_return_type(result[2], bytes)
-            self.check_callback_return_type(result[3], dict)
-            self.check_callback_return_type(result[4], bytes)
-            self.check_callback_return_type(result[5], bytes)
+            self._validate_request_callback_return_type(result)
             return result
 
         return method, host, path, headers, body, version
-
 
     def onResponseReceived(self, status: bytes, headers: dict, body: bytes):
         """Run the user-defined handleResponse callback and call the handleResponse
@@ -166,14 +178,7 @@ class Hook:
                 body,
                 self.callbacks
             )
-            if not isinstance(result, tuple) or len(result) != 3:
-                raise TypeError('The handleResponse callback must return a tuple containing a bytes status, dict headers, and bytes body.')
-            if not isinstance(result[0], bytes):
-                raise TypeError('The status returned by the handleResponse callback must be of type bytes.')
-            if not isinstance(result[1], dict):
-                raise TypeError('The headers returned by the handleResponse callback must be of type dict.')
-            if not isinstance(result[2], bytes):
-                raise TypeError('The body returned by the handleResponse callback must be of type bytes.')
+            self._validate_response_callback_return_type(result)
             return result
 
         return status, headers, body
