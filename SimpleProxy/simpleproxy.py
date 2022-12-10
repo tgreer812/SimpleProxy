@@ -16,9 +16,6 @@ from hexdump import hexdump
 
 import json
 
-class HookedProxyClientFactory(ProxyClientFactory):
-    def test(self, line):
-        pass
 
 class HookedRequest(Request):
 
@@ -52,14 +49,12 @@ class HookedRequest(Request):
         super().process()
 
 
-class HookedSite(Site):
 
-    def render(self,request):
-        pass
-
-
+from HookedProxy import HookedReverseProxy
 
 def start_proxy(rhost, rport, rpath, lport):
+    hrp = HookedReverseProxy()
+    '''
     print(rhost, rport, rpath, lport)
     # Create a reverse proxy resource
     proxy = ReverseProxyResource(
@@ -68,13 +63,13 @@ def start_proxy(rhost, rport, rpath, lport):
       b""
     )
 
-
     # Create a site and add the proxy resource
     site = Site(proxy,requestFactory=HookedRequest)
 
     # Start the reactor and listen for incoming connections
     reactor.listenTCP(lport, site)
     reactor.run()
+    '''
 
 
 def run(args):
