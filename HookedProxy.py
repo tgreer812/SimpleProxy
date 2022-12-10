@@ -1,4 +1,15 @@
 
+'''This module creates a HookedReverseProxy and HookedProxy
+
+Generically speaking, a hooked proxy is a proxy that allows the user
+to attach callback functions that are able to modify requests and responses
+in transit.
+
+TODO: modify class method names to conform to pep
+TODO: figure out if the architecture of the Hook should be modified. Is it too long? Anything that can be decoupled?
+TODO: do this with more sleep :)
+'''
+
 from twisted.web.proxy import ReverseProxy, ReverseProxyRequest
 
 
@@ -162,6 +173,9 @@ class Hook:
             headers: The headers of the response (dict).
             body: The body of the response (bytes).
 
+        Raises:
+            InvalidHookCallbackReturnType: If the result is not of the expected return type.
+
         Returns:
             The result of the handleResponse call.
         """
@@ -194,7 +208,7 @@ class HookChain:
         self.hooks = []
         self.last_hook = None
 
-    def add_hook(self, hook: Hook):
+    def registerHook(self, hook: Hook):
         """Add a Hook object to the end of the chain.
 
         Args:
@@ -203,12 +217,8 @@ class HookChain:
         Returns:
             The HookChain object (for method chaining).
         """
-        if self.last_hook:
-            self.last_hook.next = hook
-        else:
-            self.hooks.append(hook)
-        self.last_hook = hook
-        return self
+        #TODO: validate that hook is of type Hook
+        self.hooks.append(hook)
 
     def onRequestReceived(self, method: bytes, host: bytes, path: bytes, headers: dict, callbacks: dict, body: bytes=b"", version: bytes=b"HTTP/2"):
         """Run the onRequestReceived method of each Hook in the chain, starting with the first Hook.
