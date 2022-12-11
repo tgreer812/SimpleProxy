@@ -16,7 +16,7 @@ from hexdump import hexdump
 
 import json
 
-
+'''
 class HookedRequest(Request):
 
     def write(self, data):
@@ -47,13 +47,17 @@ class HookedRequest(Request):
         # log.debug(locals())
         # log.debug(dir())
         super().process()
+'''
 
+def printHookHandleRequest():
 
 
 from HookedProxy import HookedReverseProxy
 
 def start_proxy(rhost, rport, rpath, lport):
     hrp = HookedReverseProxy()
+
+    printHook = Hook()
     '''
     print(rhost, rport, rpath, lport)
     # Create a reverse proxy resource

@@ -6,8 +6,6 @@ to attach callback functions that are able to modify requests and responses
 in transit.
 
 TODO: modify class method names to conform to pep
-TODO: figure out if the architecture of the Hook should be modified. Is it too long? Anything that can be decoupled?
-TODO: do this with more sleep :)
 '''
 
 from twisted.web.proxy import ReverseProxy, ReverseProxyRequest
@@ -111,6 +109,7 @@ class Hook:
         self.state = newState
 
     def deactivateHook(self):
+        #TODO: docstrings for all these methods
         self.state['active'] = False
     
     def activateHook(self):
@@ -244,7 +243,7 @@ class HookChain:
         #TODO: validate that hook is of type Hook
         self.hooks.append(hook)
 
-    def onRequestReceived(self, method: bytes, host: bytes, path: bytes, headers: dict, callbacks: dict, body: bytes=b"", version: bytes=b"HTTP/2"):
+    def onRequestReceived(self, method: bytes, host: bytes, path: bytes, headers: dict, body: bytes=b"", version: bytes=b"HTTP/2"):
         """Run the onRequestReceived method of each Hook in the chain, starting with the first Hook.
 
         Args:
@@ -260,10 +259,10 @@ class HookChain:
         """
         result = None
         for hook in self.hooks:
-            result = hook.onHandleRequest(method, host, path, headers, body, version, callbacks)
+            result = hook.onHandleRequest(method, host, path, headers, body, version)
         return result
 
-    def onResponseReceived(self, status: bytes, headers: dict, body: bytes, callbacks: dict):
+    def onResponseReceived(self, status: bytes, headers: dict, body: bytes):
         """Run the onResponseReceived method of each Hook in the chain, starting with the first Hook.
 
         Args:
@@ -276,31 +275,37 @@ class HookChain:
         """
         result = None
         for hook in self.hooks:
-            result = hook.onHandleResponse(status, headers, body, callbacks)
+            result = hook.onHandleResponse(status, headers, body)
         return result
 
 
 class HookedReverseProxyRequest(ReverseProxyRequest):
     ''' A reverse proxy request for the http protocol
     '''
-    hookChain = HookChain()
+    def __init__(self, channel, queued=..., reactor=...):
+        super().__init__(channel, queued, reactor)
+        self.hookChain = HookChain()
 
     def registerHooks(self, hooks):
         self.hookChain.registerHooks(hooks)
 
     def write(self, data):
-
-        # -------------- REMOVE
-        log.info("=====Response=====")
-        print(self.responseHeaders)
-        #hexdump(data)
-        print(data[:10])
-        # ------------- ENDREMOVE
+        self.hookChain.onResponseReceived(
+            self.responseHeaders.
+        )
         super().write(data)
 
     def process(self):
-        log.info("=====Request=====")
-        
+        #log.info("=====Request=====")
+        self.hookChain.onRequestReceived(
+            self.method,
+            self.host,
+            self.path,
+            self.requestHeaders,
+            self.content,
+            b'' #TODO: this is where version would go. Should we just delete it?
+        )
+        '''
         strHeaders = {}
         for header in self.requestHeaders.getAllRawHeaders():
             strHeaders[header[0].decode('utf-8')] = list(
@@ -316,6 +321,7 @@ class HookedReverseProxyRequest(ReverseProxyRequest):
             'data' : str(self.content)
         }
         print(json.dumps(output,indent=2))
+        '''
 
         clientFactory = self.proxyClientFactoryClass(
             self.method,
