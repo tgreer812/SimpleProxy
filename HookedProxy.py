@@ -8,7 +8,9 @@ in transit.
 TODO: modify class method names to conform to pep
 '''
 
-from twisted.web.proxy import ReverseProxy, ReverseProxyRequest
+from twisted.web.proxy import ReverseProxy, ReverseProxyRequest, ProxyClientFactory, ProxyClient, ReverseProxyResource
+from twisted.web.server import Site
+from typing import List
 
 class NotOverriddenError(Exception):
     """Raised when a method is not overridden by a user-defined subclass"""
@@ -231,6 +233,10 @@ class HookChain:
         """
         self.hooks = []
 
+    def registerHooks(self, hooks: List[Hook]):
+        for hook in hooks:
+            self.registerHook(hook)
+
     def registerHook(self, hook: Hook):
         """Add a Hook object to the end of the chain.
 
@@ -279,21 +285,36 @@ class HookChain:
         return result
 
 
-class HookedReverseProxyRequest(ReverseProxyRequest):
-    ''' A reverse proxy request for the http protocol
-    '''
-    def __init__(self, channel, queued=..., reactor=...):
-        super().__init__(channel, queued, reactor)
-        self.hookChain = HookChain()
+class HookedProxyClient(ProxyClient):
+    
+    def handleResponsePart(self, data):
+        print(data)
+        self.super().handleResponsePart(data)
+
+
+class HookedProxyClientFactory(ProxyClientFactory):
+    """
+    """
+
+    protocol = HookedProxyClient
+    hookChain = HookChain()
 
     def registerHooks(self, hooks):
         self.hookChain.registerHooks(hooks)
 
-    def write(self, data):
-        self.hookChain.onResponseReceived(
-            self.responseHeaders.
-        )
-        super().write(data)
+
+class HookedReverseProxyRequest(ReverseProxyRequest):
+    ''' This is a request object (encapsulates a request and response)
+    '''
+    proxyClientFactoryClass = HookedProxyClientFactory
+
+    def __init__(self, channel, queued=..., reactor=...):
+        super().__init__(channel, queued, reactor)
+        self.hookChain = HookChain()
+        self.proxyClientFactoryClass
+
+    def registerHooks(self, hooks):
+        self.hookChain.registerHooks(hooks)
 
     def process(self):
         #log.info("=====Request=====")
@@ -303,25 +324,8 @@ class HookedReverseProxyRequest(ReverseProxyRequest):
             self.path,
             self.requestHeaders,
             self.content,
-            b'' #TODO: this is where version would go. Should we just delete it?
+            self.clientproto
         )
-        '''
-        strHeaders = {}
-        for header in self.requestHeaders.getAllRawHeaders():
-            strHeaders[header[0].decode('utf-8')] = list(
-                map(lambda elem: elem.decode('utf-8'), header[1])
-            )
-        
-        #print(strHeaders)
-        output = {
-            'method' : self.method.decode('utf-8'),
-            'uri' : self.uri.decode('utf-8'),
-            #'headers' : self.requestHeaders,
-            'headers' : strHeaders,
-            'data' : str(self.content)
-        }
-        print(json.dumps(output,indent=2))
-        '''
 
         clientFactory = self.proxyClientFactoryClass(
             self.method,
@@ -331,12 +335,13 @@ class HookedReverseProxyRequest(ReverseProxyRequest):
             self.content.read(),
             self
         )
+        clientFactory.registerHooks(self.hookChain)
         self.reactor.connectTCP(self.factory.host, self.factory.port, clientFactory)
         
 
 class HookedReverseProxy(ReverseProxy):
     '''
-    Implements a simple hooked reverse proxy
+    Implements a simple hooked reverse proxy. This is a protocol.
     '''
     requestFactory = HookedReverseProxyRequest
     registeredHooks = []
@@ -346,3 +351,20 @@ class HookedReverseProxy(ReverseProxy):
         self.super().__init__()
 
 
+class HookedReverseProxyResource(ReverseProxyResource):
+    proxyClientFactoryClass = HookedProxyClientFactory
+
+
+class HookedSite(Site):
+    """
+    """
+
+    #TODO: Decouple this since we need HookedSite to work for forward and reverse proxies (just pass as a parameter)
+    requestFactory = HookedReverseProxyRequest
+
+    # def __init__(self, resource, requestFactory=None, *args, **kwargs):
+    #     super().__init__(resource, requestFactory, *args, **kwargs)
+
+    def registerHooks(self, hooks : List[Hook]):
+        self.requestFactory.registerHooks(hooks)
+    

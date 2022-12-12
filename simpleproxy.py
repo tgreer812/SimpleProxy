@@ -13,6 +13,7 @@ from twisted.web.proxy import ReverseProxyResource, ProxyClientFactory
 from twisted.web.server import Site, Request
 
 from hexdump import hexdump
+from HookedProxy import HookedSite, HookedReverseProxyResource
 
 import json
 
@@ -49,31 +50,28 @@ class HookedRequest(Request):
         super().process()
 '''
 
-def printHookHandleRequest():
+
 
 
 from HookedProxy import HookedReverseProxy
 
 def start_proxy(rhost, rport, rpath, lport):
-    hrp = HookedReverseProxy()
 
-    printHook = Hook()
-    '''
+    
     print(rhost, rport, rpath, lport)
     # Create a reverse proxy resource
-    proxy = ReverseProxyResource(
+    proxy = HookedReverseProxyResource(
       rhost,
       rport,
       b""
     )
 
-    # Create a site and add the proxy resource
-    site = Site(proxy,requestFactory=HookedRequest)
+    site = HookedSite(proxy)
+
 
     # Start the reactor and listen for incoming connections
     reactor.listenTCP(lport, site)
     reactor.run()
-    '''
 
 
 def run(args):
