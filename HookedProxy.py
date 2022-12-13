@@ -65,7 +65,7 @@ class Hook:
             InvalidHookCallbackReturnType: If the result is not of the expected return type.
         """
         if not isinstance(result, expected_return_type):
-            raise self.InvalidHookCallbackReturnType(f'The result must be of type {expected_return_type}.')
+            raise self.InvalidHookCallbackReturnType(f'The result must be of type {expected_return_type}. Got {type(result)}.')
     
     def _validate_request_callback_return_type(self, result):
         self.check_callback_return_type(result, tuple)
@@ -81,12 +81,9 @@ class Hook:
     def _validate_response_callback_return_type(self, result):
         if not isinstance(result, tuple) or len(result) != 3:
             raise self.InvalidHookCallbackReturnType('The handleResponse callback must return a tuple containing a bytes status, dict headers, and bytes body.')
-        if not isinstance(result[0], bytes):
-            raise self.InvalidHookCallbackReturnType('The status returned by the handleResponse callback must be of type bytes.')
-        if not isinstance(result[1], dict):
-            raise self.InvalidHookCallbackReturnType('The headers returned by the handleResponse callback must be of type dict.')
-        if not isinstance(result[2], bytes):
-            raise self.InvalidHookCallbackReturnType('The body returned by the handleResponse callback must be of type bytes.')
+        self.check_callback_return_type(result[0], bytes)
+        self.check_callback_return_type(result[1], dict)
+        self.check_callback_return_type(result[2], bytes)
 
     def isActive(self):
         return self.state['active']
@@ -117,7 +114,7 @@ class Hook:
     def activateHook(self):
         self.state['active'] = True
     
-    def onRequestReceived(self, method: bytes, host: bytes, path: bytes, headers: dict, body: bytes=b"" , version: bytes=b"HTTP/2"):
+    def onRequestReceived(self, method: bytes, host: bytes, path: bytes, headers: dict, body: bytes=b"" , version: bytes=b"HTTP/1"):
         """
         Handles an incoming HTTP request.
 
@@ -233,6 +230,9 @@ class HookChain:
         """
         self.hooks = []
 
+    def getHooks(self):
+        return self.hooks
+
     def registerHooks(self, hooks: List[Hook]):
         for hook in hooks:
             self.registerHook(hook)
@@ -286,14 +286,57 @@ class HookChain:
 
 
 class HookedProxyClient(ProxyClient):
-    
-    def handleResponsePart(self, data):
-        print(data)
-        super().handleResponsePart(data)
-    
+    _response_version = b''
+    _response_code = b''
+    _response_reason = b''
+    _response_headers = {}
+    _response_data_buffer = b''
+    hookChain = HookChain()
+
+    def registerHooks(self, hooks):
+        self.hookChain.registerHooks(hooks)
+
     def handleEndHeaders(self):
+        self.father
         print(self.headers)
         return super().handleEndHeaders()
+
+    def handleResponsePart(self, data):
+        #print(data)
+        # Buffer data until all has been read
+        self._data_buffer += data
+        #super().handleResponsePart(data)
+    
+    def handleResponseEnd(self):
+        """
+        Write the buffered headers and body to the transport
+        Finish the original request, indicating that the response has been
+        completely written to it, and disconnect the outgoing transport.
+        """
+        
+        # TODO: Set _status (protocol, method, msg)
+        
+        # Get all headers and save them temporarily
+        for _header, _value in self.father.responseHeaders.getAllRawHeaders():
+            self._response_headers[_header] = _value
+
+        # Apply hook
+        self.hookChain.onResponseReceived(
+            self._status, 
+            self._response_headers, 
+            self._response_data_buffer
+        )
+
+        # TODO: After applying hook we need to write the hook back to the father's raw headers
+
+        # This will write the headers and the data buffer. We just need to set the raw headers before hand - so we should hook here
+        self.father.write(self._data_buffer)
+
+        if not self._finished:
+            self._finished = True
+            self.father.finish()
+            self.transport.loseConnection()
+    
 
 
 class HookedProxyClientFactory(ProxyClientFactory):
@@ -317,7 +360,6 @@ class HookedReverseProxyRequest(ReverseProxyRequest):
         self.hookChain.registerHooks(hooks)
 
     def process(self):
-        #log.info("=====Request=====")
         self.hookChain.onRequestReceived(
             self.method,
             self.host,
@@ -336,7 +378,7 @@ class HookedReverseProxyRequest(ReverseProxyRequest):
             self
         )
         #TODO: REPLACE THIS!!
-        clientFactory.registerHooks([])
+        clientFactory.registerHooks(hookChain.getHooks())
         print(self.channel.factory.resource.host)
         self.reactor.connectTCP(self.channel.factory.resource.host, self.channel.factory.resource.port, clientFactory)
         
