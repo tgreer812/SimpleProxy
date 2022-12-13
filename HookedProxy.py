@@ -296,15 +296,14 @@ class HookedProxyClient(ProxyClient):
     def registerHooks(self, hooks):
         self.hookChain.registerHooks(hooks)
 
-    def handleEndHeaders(self):
-        self.father
-        print(self.headers)
-        return super().handleEndHeaders()
+    # def handleEndHeaders(self):
+    #     print(self.headers)
+    #     return super().handleEndHeaders()
 
     def handleResponsePart(self, data):
         #print(data)
         # Buffer data until all has been read
-        self._data_buffer += data
+        self._response_data_buffer += data
         #super().handleResponsePart(data)
     
     def handleResponseEnd(self):
@@ -315,21 +314,32 @@ class HookedProxyClient(ProxyClient):
         """
         
         # TODO: Set _status (protocol, method, msg)
-        
+        self._status = f"{self.father.clientproto.decode()} {self.father.code} {self.father.code_message.decode()}".encode('utf-8')
+
         # Get all headers and save them temporarily
         for _header, _value in self.father.responseHeaders.getAllRawHeaders():
             self._response_headers[_header] = _value
+        
+        # Also clear the headers from the father so we can write only the returned ones from the hook back
+        # TODO: There is probably a better way of doing this so we don't need two loops, but it's bitching that
+        # I'm changing the size of the iterator mid iteration. rip
+        for _header, _value in self._response_headers.items():
+            self.father.responseHeaders.removeHeader(_header)
 
-        # Apply hook
+        # Apply all hooks
         self.hookChain.onResponseReceived(
             self._status, 
             self._response_headers, 
             self._response_data_buffer
         )
 
-        # TODO: After applying hook we need to write the hook back to the father's raw headers
+        # Father is the request that created the factory that generated this protocol
+        # After applying hook we need to write the headers back to the father's raw headers
+        for k,v in self._response_headers.items():
+            # TODO: fix this shit
+            self.father.responseHeaders.addRawHeader(k, v)
 
-        # This will write the headers and the data buffer. We just need to set the raw headers before hand - so we should hook here
+        # This will write the headers and the data buffer back to the original client.
         self.father.write(self._data_buffer)
 
         if not self._finished:
@@ -378,7 +388,7 @@ class HookedReverseProxyRequest(ReverseProxyRequest):
             self
         )
         #TODO: REPLACE THIS!!
-        clientFactory.registerHooks(hookChain.getHooks())
+        clientFactory.registerHooks(self.hookChain.getHooks())
         print(self.channel.factory.resource.host)
         self.reactor.connectTCP(self.channel.factory.resource.host, self.channel.factory.resource.port, clientFactory)
         
