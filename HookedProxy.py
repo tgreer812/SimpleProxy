@@ -289,7 +289,11 @@ class HookedProxyClient(ProxyClient):
     
     def handleResponsePart(self, data):
         print(data)
-        self.super().handleResponsePart(data)
+        super().handleResponsePart(data)
+    
+    def handleEndHeaders(self):
+        print(self.headers)
+        return super().handleEndHeaders()
 
 
 class HookedProxyClientFactory(ProxyClientFactory):
@@ -307,11 +311,7 @@ class HookedReverseProxyRequest(ReverseProxyRequest):
     ''' This is a request object (encapsulates a request and response)
     '''
     proxyClientFactoryClass = HookedProxyClientFactory
-
-    def __init__(self, channel, queued=..., reactor=...):
-        super().__init__(channel, queued, reactor)
-        self.hookChain = HookChain()
-        self.proxyClientFactoryClass
+    hookChain = HookChain()
 
     def registerHooks(self, hooks):
         self.hookChain.registerHooks(hooks)
@@ -335,15 +335,17 @@ class HookedReverseProxyRequest(ReverseProxyRequest):
             self.content.read(),
             self
         )
-        clientFactory.registerHooks(self.hookChain)
-        self.reactor.connectTCP(self.factory.host, self.factory.port, clientFactory)
+        #TODO: REPLACE THIS!!
+        clientFactory.registerHooks([])
+        print(self.channel.factory.resource.host)
+        self.reactor.connectTCP(self.channel.factory.resource.host, self.channel.factory.resource.port, clientFactory)
         
 
 class HookedReverseProxy(ReverseProxy):
     '''
     Implements a simple hooked reverse proxy. This is a protocol.
     '''
-    requestFactory = HookedReverseProxyRequest
+    #requestFactory = HookedReverseProxyRequest
     registeredHooks = []
 
     def __init__(self):
@@ -362,8 +364,8 @@ class HookedSite(Site):
     #TODO: Decouple this since we need HookedSite to work for forward and reverse proxies (just pass as a parameter)
     requestFactory = HookedReverseProxyRequest
 
-    # def __init__(self, resource, requestFactory=None, *args, **kwargs):
-    #     super().__init__(resource, requestFactory, *args, **kwargs)
+    def __init__(self, resource, requestFactory=None, *args, **kwargs):
+        super().__init__(resource, requestFactory, *args, **kwargs)
 
     def registerHooks(self, hooks : List[Hook]):
         self.requestFactory.registerHooks(hooks)

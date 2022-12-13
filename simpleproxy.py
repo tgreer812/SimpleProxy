@@ -9,11 +9,11 @@ log = logging.getLogger(__name__)
 # Import the required modules
 from argparse import ArgumentParser
 from twisted.internet import reactor
-from twisted.web.proxy import ReverseProxyResource, ProxyClientFactory
+from twisted.web.proxy import ReverseProxyResource, ProxyClientFactory, ReverseProxyRequest
 from twisted.web.server import Site, Request
 
 from hexdump import hexdump
-from HookedProxy import HookedSite, HookedReverseProxyResource
+from HookedProxy import HookedReverseProxyRequest, HookedSite, HookedReverseProxyResource
 
 import json
 
@@ -66,8 +66,9 @@ def start_proxy(rhost, rport, rpath, lport):
       b""
     )
 
-    site = HookedSite(proxy)
-
+    #site = HookedSite(proxy)
+    site = Site(proxy, requestFactory=HookedReverseProxyRequest)
+    #site = Site(proxy, requestFactory=ReverseProxyRequest)
 
     # Start the reactor and listen for incoming connections
     reactor.listenTCP(lport, site)
