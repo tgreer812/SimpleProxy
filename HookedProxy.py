@@ -177,7 +177,7 @@ class Hook:
 
         return new_status, new_headers, new_body
 
-    def onHandleRequest(self, method, host, path, headers, body, version):
+    def onHandleRequest(self, method: bytes, host: bytes, path: bytes, headers: dict, body: bytes=b"" , version: bytes=b"HTTP/1"):
         """
         Handles an incoming HTTP request.
 
@@ -200,7 +200,7 @@ class Hook:
         # This method must be overridden by a user-defined subclass
         raise NotOverriddenError('onHandleRequest() must be overridden by a user-defined subclass')
 
-    def onHandleResponse(self, method, host, path, headers, body, version):
+    def onHandleResponse(self, status: bytes, headers: dict, body: bytes):
         """
         Handles an incoming HTTP response.
 
@@ -293,32 +293,31 @@ class HookedProxyClient(ProxyClient):
     _response_data_buffer = b''
     hookChain = HookChain()
 
-    def registerHooks(self, hooks):
-        self.hookChain.registerHooks(hooks)
-
-    # def handleEndHeaders(self):
-    #     print(self.headers)
-    #     return super().handleEndHeaders()
+    @classmethod
+    def registerHooks(cls, hooks):
+        cls.hookChain.registerHooks(hooks)
 
     def handleResponsePart(self, data):
-        #print(data)
         # Buffer data until all has been read
         self._response_data_buffer += data
-        #super().handleResponsePart(data)
-    
+
     def handleResponseEnd(self):
         """
         Write the buffered headers and body to the transport
         Finish the original request, indicating that the response has been
         completely written to it, and disconnect the outgoing transport.
         """
+        if self._finished:
+            return
         
         # TODO: Set _status (protocol, method, msg)
         self._status = f"{self.father.clientproto.decode()} {self.father.code} {self.father.code_message.decode()}".encode('utf-8')
 
         # Get all headers and save them temporarily
         for _header, _value in self.father.responseHeaders.getAllRawHeaders():
-            self._response_headers[_header] = _value
+            assert len(_value) == 1
+            # For some reason the Headers class stores the header value in a list - extract it
+            self._response_headers[_header] = _value[0]
         
         # Also clear the headers from the father so we can write only the returned ones from the hook back
         # TODO: There is probably a better way of doing this so we don't need two loops, but it's bitching that
@@ -336,18 +335,16 @@ class HookedProxyClient(ProxyClient):
         # Father is the request that created the factory that generated this protocol
         # After applying hook we need to write the headers back to the father's raw headers
         for k,v in self._response_headers.items():
-            # TODO: fix this shit
             self.father.responseHeaders.addRawHeader(k, v)
 
         # This will write the headers and the data buffer back to the original client.
-        self.father.write(self._data_buffer)
+        self.father.write(self._response_data_buffer)
 
-        if not self._finished:
-            self._finished = True
-            self.father.finish()
-            self.transport.loseConnection()
+        # Mark it as complete and close the transport
+        self._finished = True
+        self.father.finish()
+        self.transport.loseConnection()
     
-
 
 class HookedProxyClientFactory(ProxyClientFactory):
     """
@@ -358,6 +355,7 @@ class HookedProxyClientFactory(ProxyClientFactory):
 
     def registerHooks(self, hooks):
         self.hookChain.registerHooks(hooks)
+        self.protocol.registerHooks(hooks)
 
 
 class HookedReverseProxyRequest(ReverseProxyRequest):
@@ -366,15 +364,16 @@ class HookedReverseProxyRequest(ReverseProxyRequest):
     proxyClientFactoryClass = HookedProxyClientFactory
     hookChain = HookChain()
 
-    def registerHooks(self, hooks):
-        self.hookChain.registerHooks(hooks)
+    @classmethod
+    def registerHooks(cls, hooks):
+        cls.hookChain.registerHooks(hooks)
 
     def process(self):
         self.hookChain.onRequestReceived(
             self.method,
-            self.host,
+            self.host.host.encode('utf-8'),
             self.path,
-            self.requestHeaders,
+            self.requestHeaders._rawHeaders,
             self.content,
             self.clientproto
         )
@@ -387,7 +386,7 @@ class HookedReverseProxyRequest(ReverseProxyRequest):
             self.content.read(),
             self
         )
-        #TODO: REPLACE THIS!!
+
         clientFactory.registerHooks(self.hookChain.getHooks())
         print(self.channel.factory.resource.host)
         self.reactor.connectTCP(self.channel.factory.resource.host, self.channel.factory.resource.port, clientFactory)
@@ -416,8 +415,8 @@ class HookedSite(Site):
     #TODO: Decouple this since we need HookedSite to work for forward and reverse proxies (just pass as a parameter)
     requestFactory = HookedReverseProxyRequest
 
-    def __init__(self, resource, requestFactory=None, *args, **kwargs):
-        super().__init__(resource, requestFactory, *args, **kwargs)
+    # def __init__(self, resource, requestFactory=None, *args, **kwargs):
+    #     super().__init__(resource, requestFactory, *args, **kwargs)
 
     def registerHooks(self, hooks : List[Hook]):
         self.requestFactory.registerHooks(hooks)

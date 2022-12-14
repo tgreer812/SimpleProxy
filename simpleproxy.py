@@ -53,12 +53,42 @@ class HookedRequest(Request):
 
 
 
-from HookedProxy import HookedReverseProxy
+from HookedProxy import Hook
+
+class TestHook(Hook):
+
+    def onHandleRequest(self, method, host, path, headers, body, version):
+        print("========Request========")
+        print(f"{method.decode()} {path.decode()} {version.decode()}")
+        print(f"Host: {host.decode()}")
+        
+        for k,v in headers.items():
+            v = v[0]
+            print(f"{k.decode()}: {v.decode()}")
+        
+        #if(len(body)):
+         #   print(f"\n{len(body)}\n")
+        print("======EndRequest======\n\n")
+    
+    def onHandleResponse(self, status: bytes, headers: dict, body: bytes):
+        print("======Response======")
+        print(f"{status.decode()}")
+        for k,v in headers.items():
+            if b'Server'.lower().strip() in k.lower():
+                v = b'gethookedbitchhhhhhh/1.0'
+                headers[k] = v
+            print(f"{k.decode()}: {v.decode()}")
+        if(len(body)):
+            print(f"\n{len(body)}\n")
+        
+        print("=====EndResponse=====\n\n")
+        
 
 def start_proxy(rhost, rport, rpath, lport):
 
     
     print(rhost, rport, rpath, lport)
+    log.info(f"Listening on 0.0.0.0:{lport}")
     # Create a reverse proxy resource
     proxy = HookedReverseProxyResource(
       rhost,
@@ -66,8 +96,9 @@ def start_proxy(rhost, rport, rpath, lport):
       b""
     )
 
-    #site = HookedSite(proxy)
-    site = Site(proxy, requestFactory=HookedReverseProxyRequest)
+    site = HookedSite(proxy)
+    site.registerHooks([TestHook()])
+    #site = Site(proxy, requestFactory=HookedReverseProxyRequest)
     #site = Site(proxy, requestFactory=ReverseProxyRequest)
 
     # Start the reactor and listen for incoming connections
