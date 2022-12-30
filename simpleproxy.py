@@ -9,17 +9,15 @@ log = logging.getLogger(__name__)
 # Import the required modules
 from argparse import ArgumentParser
 from twisted.internet import reactor
-from twisted.web.proxy import ReverseProxyResource, ProxyClientFactory
+from twisted.web.proxy import ReverseProxyResource, ProxyClientFactory, ReverseProxyRequest
 from twisted.web.server import Site, Request
 
 from hexdump import hexdump
+from HookedProxy import HookedReverseProxyRequest, HookedSite, HookedReverseProxyResource
 
 import json
 
-class HookedProxyClientFactory(ProxyClientFactory):
-    def test(self, line):
-        pass
-
+'''
 class HookedRequest(Request):
 
     def write(self, data):
@@ -50,27 +48,57 @@ class HookedRequest(Request):
         # log.debug(locals())
         # log.debug(dir())
         super().process()
+'''
 
 
-class HookedSite(Site):
-
-    def render(self,request):
-        pass
 
 
+from HookedProxy import Hook
+
+class TestHook(Hook):
+
+    def onHandleRequest(self, method, host, path, headers, body, version):
+        print("========Request========")
+        print(f"{method.decode()} {path.decode()} {version.decode()}")
+        print(f"Host: {host.decode()}")
+        
+        for k,v in headers.items():
+            v = v[0]
+            print(f"{k.decode()}: {v.decode()}")
+        
+        #if(len(body)):
+         #   print(f"\n{len(body)}\n")
+        print("======EndRequest======\n\n")
+    
+    def onHandleResponse(self, status: bytes, headers: dict, body: bytes):
+        print("======Response======")
+        print(f"{status.decode()}")
+        for k,v in headers.items():
+            if b'Server'.lower().strip() in k.lower():
+                v = b'gethookedboyyyy/1.0'
+                headers[k] = v
+            print(f"{k.decode()}: {v.decode()}")
+        if(len(body)):
+            print(f"\n{len(body)}\n")
+        
+        print("=====EndResponse=====\n\n")
+        
 
 def start_proxy(rhost, rport, rpath, lport):
+
     print(rhost, rport, rpath, lport)
+    log.info(f"Listening on 0.0.0.0:{lport}")
     # Create a reverse proxy resource
-    proxy = ReverseProxyResource(
+    proxy = HookedReverseProxyResource(
       rhost,
       rport,
       b""
     )
 
-
-    # Create a site and add the proxy resource
-    site = Site(proxy,requestFactory=HookedRequest)
+    site = HookedSite(proxy)
+    site.registerHooks([TestHook()])
+    #site = Site(proxy, requestFactory=HookedReverseProxyRequest)
+    #site = Site(proxy, requestFactory=ReverseProxyRequest)
 
     # Start the reactor and listen for incoming connections
     reactor.listenTCP(lport, site)
