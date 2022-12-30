@@ -86,7 +86,6 @@ class TestHook(Hook):
 
 def start_proxy(rhost, rport, rpath, lport):
 
-    
     print(rhost, rport, rpath, lport)
     log.info(f"Listening on 0.0.0.0:{lport}")
     # Create a reverse proxy resource

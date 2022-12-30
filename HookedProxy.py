@@ -12,9 +12,6 @@ from twisted.web.proxy import ReverseProxy, ReverseProxyRequest, ProxyClientFact
 from twisted.web.server import Site
 from typing import List
 
-class NotOverriddenError(Exception):
-    """Raised when a method is not overridden by a user-defined subclass"""
-
 
 class Hook:
     """A chainable hook that can be used to intercept and modify requests and responses.
@@ -51,9 +48,6 @@ class Hook:
     class InvalidHookStateError(Exception):
         """Raised when the input provided by the user is invalid."""
 
-    class InvalidHookCallbackReturnType(Exception):
-        """Raised when the return type of a hook is invalid."""
-
     def _check_callback_return_type(self, result, expected_return_type):
         """Checks that the given result is of the expected return type.
 
@@ -65,22 +59,23 @@ class Hook:
             InvalidHookCallbackReturnType: If the result is not of the expected return type.
         """
         if not isinstance(result, expected_return_type):
-            raise self.InvalidHookCallbackReturnType(f'The result must be of type {expected_return_type}. Got {type(result)}.')
+            raise TypeError(f'The result must be of type {expected_return_type}. Got {type(result)}.')
     
     def _validate_request_callback_return_type(self, result):
         self.check_callback_return_type(result, tuple)
         if len(result) != 6:
-            raise self.InvalidHookCallbackReturnType('The handleRequest callback must return a tuple containing bytes method, bytes host, bytes path, dict headers, bytes body, and bytes version.')
+            raise TypeError('The handleRequest callback must return a tuple containing bytes method, bytes host, bytes path, dict headers, bytes body, and bytes version.')
         self.check_callback_return_type(result[0], bytes)
         self.check_callback_return_type(result[1], bytes)
         self.check_callback_return_type(result[2], bytes)
         self.check_callback_return_type(result[3], dict)
         self.check_callback_return_type(result[4], bytes)
         self.check_callback_return_type(result[5], bytes)
+
     
     def _validate_response_callback_return_type(self, result):
         if not isinstance(result, tuple) or len(result) != 3:
-            raise self.InvalidHookCallbackReturnType('The handleResponse callback must return a tuple containing a bytes status, dict headers, and bytes body.')
+            raise TypeError('The handleResponse callback must return a tuple containing a bytes status, dict headers, and bytes body.')
         self.check_callback_return_type(result[0], bytes)
         self.check_callback_return_type(result[1], dict)
         self.check_callback_return_type(result[2], bytes)
@@ -198,7 +193,7 @@ class Hook:
             format: (method, host, path, headers, body, version)
         """
         # This method must be overridden by a user-defined subclass
-        raise NotOverriddenError('onHandleRequest() must be overridden by a user-defined subclass')
+        raise NotImplementedError('onHandleRequest() must be overridden by a user-defined subclass')
 
     def onHandleResponse(self, status: bytes, headers: dict, body: bytes):
         """
@@ -218,7 +213,7 @@ class Hook:
             format: (status, headers, body)
         """
         # This method must be overridden by a user-defined subclass
-        raise NotOverriddenError('onHandleResponse() must be overridden by a user-defined subclass')
+        raise NotImplementedError('onHandleResponse() must be overridden by a user-defined subclass')
     
     
 class HookChain:
