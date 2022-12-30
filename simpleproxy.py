@@ -75,7 +75,7 @@ class TestHook(Hook):
         print(f"{status.decode()}")
         for k,v in headers.items():
             if b'Server'.lower().strip() in k.lower():
-                v = b'gethookedbitchhhhhhh/1.0'
+                v = b'gethookedboyyyy/1.0'
                 headers[k] = v
             print(f"{k.decode()}: {v.decode()}")
         if(len(body)):

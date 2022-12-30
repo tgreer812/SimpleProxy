@@ -8,6 +8,7 @@ in transit.
 TODO: modify class method names to conform to pep
 '''
 
+from sympy import true
 from twisted.web.proxy import ReverseProxy, ReverseProxyRequest, ProxyClientFactory, ProxyClient, ReverseProxyResource
 from twisted.web.server import Site
 from typing import List
@@ -41,12 +42,8 @@ class Hook:
             handleResponse: A function that takes the status, headers, and body of a response as arguments and returns a
                             tuple of these values. This function will be called when a response is received by the Hook.
         """
-        self.state = {
-            'active': True
-        }
-    
-    class InvalidHookStateError(Exception):
-        """Raised when the input provided by the user is invalid."""
+        self.active = True
+        self.state = {}
 
     def _check_callback_return_type(self, result, expected_return_type):
         """Checks that the given result is of the expected return type.
@@ -72,7 +69,6 @@ class Hook:
         self.check_callback_return_type(result[4], bytes)
         self.check_callback_return_type(result[5], bytes)
 
-    
     def _validate_response_callback_return_type(self, result):
         if not isinstance(result, tuple) or len(result) != 3:
             raise TypeError('The handleResponse callback must return a tuple containing a bytes status, dict headers, and bytes body.')
@@ -81,7 +77,8 @@ class Hook:
         self.check_callback_return_type(result[2], bytes)
 
     def isActive(self):
-        return self.state['active']
+        return self.active
+        #return self.state['active']
 
     def setState(self, newState: dict):
         """Set the internal state of the Hook object.
@@ -95,19 +92,17 @@ class Hook:
 
         # Check if the input provided by the user is valid
         if not isinstance(newState, dict):
-            raise self.InvalidHookStateError("The new state must be a dict object.")
-        if 'active' not in newState:
-            raise self.InvalidHookStateError("The new state must contain a key named 'active'.")
+            raise TypeError("The new state must be a dict object.")
             
         # Set the new internal state of the Hook object
         self.state = newState
 
     def deactivateHook(self):
         #TODO: docstrings for all these methods
-        self.state['active'] = False
+        self.active = False
     
     def activateHook(self):
-        self.state['active'] = True
+        self.active = True
     
     def onRequestReceived(self, method: bytes, host: bytes, path: bytes, headers: dict, body: bytes=b"" , version: bytes=b"HTTP/1"):
         """
@@ -130,7 +125,7 @@ class Hook:
             format: (method, host, path, headers, body, version)
         """
         # Check if the hook is active
-        if not self.state['active']:
+        if not self.active:
             return method, host, path, headers, body, version
 
         # Allow the user to override the handleRequest method
@@ -163,7 +158,7 @@ class Hook:
             format: (status, headers, body)
         """
         # Check if the hook is active
-        if not self.state['active']:
+        if not self.active:
             return status, headers, body
 
         # Allow the user to override the handleResponse method
@@ -241,7 +236,8 @@ class HookChain:
         Returns:
             The HookChain object (for method chaining).
         """
-        #TODO: validate that hook is of type Hook
+        if not isinstance(hook, Hook):
+            raise TypeError(f'\'hook\' must be of type Hook. Got {type(hook)}')
         self.hooks.append(hook)
 
     def onRequestReceived(self, method: bytes, host: bytes, path: bytes, headers: dict, body: bytes=b"", version: bytes=b"HTTP/2"):
@@ -305,7 +301,6 @@ class HookedProxyClient(ProxyClient):
         if self._finished:
             return
         
-        # TODO: Set _status (protocol, method, msg)
         self._status = f"{self.father.clientproto.decode()} {self.father.code} {self.father.code_message.decode()}".encode('utf-8')
 
         # Get all headers and save them temporarily
